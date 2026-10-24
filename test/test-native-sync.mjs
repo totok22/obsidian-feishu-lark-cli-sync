@@ -11,7 +11,7 @@ await esbuild.build({
 	platform: "node",
 	outfile: "test/.tmp-native-sync.mjs"
 });
-const { syncNativeDocument, nativeTreeHash } = await import("./.tmp-native-sync.mjs");
+const { syncNativeDocument, nativeTreeHash, readNativeSnapshot, convertNativeDocument } = await import("./.tmp-native-sync.mjs");
 const text = (id, value) => ({
 	block_id: id,
 	block_type: 2,
@@ -384,3 +384,11 @@ await assert.rejects(
 );
 assert.equal(networkImage.blocks.get("doc").children.length, 0);
 console.log("Mixed native media recovery, style settings, and pre-write validation tests passed");
+
+// Reject malformed API data before constructing a native tree.
+await assert.rejects(() => readNativeSnapshot("doc", async (_method, path) =>
+	path.endsWith("/blocks") ? { items: [null] } : { document: { revision_id: 1 } }
+), /Invalid native block response/);
+await assert.rejects(() => convertNativeDocument("Text", async () => ({
+	blocks: [text("x", "Text")], first_level_block_ids: [42]
+})), /Native conversion response incomplete/);

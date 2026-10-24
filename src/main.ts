@@ -390,6 +390,30 @@ interface LarkCommandOptions {
 	cwd?: string;
 }
 
+// Obsidian exposes loadPdfJs() as Promise<any>; describe the renderer surface we use.
+interface PdfJs {
+	getDocument(options: { data: Uint8Array; isEvalSupported: boolean }): {
+		promise: Promise<{
+			getPage(pageNumber: number): Promise<{
+				getViewport(options: { scale: number }): PdfViewport;
+				render(options: {
+					canvasContext: CanvasRenderingContext2D;
+					viewport: PdfViewport;
+					transform: number[];
+					background: string;
+				}): { promise: Promise<void> };
+			}>;
+			destroy(): Promise<void>;
+		}>;
+	};
+}
+
+interface PdfViewport {
+	width: number;
+	height: number;
+	convertToViewportRectangle(rect: [number, number, number, number]): [number, number, number, number];
+}
+
 interface PreparedNoteContent {
 	content: string;
 	images: LocalImageResource[];
@@ -2920,7 +2944,7 @@ exec "${nodePath}" "${scriptPath}" "$@"
 						true
 					),
 					render: async (path, pageNumber, rect) => {
-						const pdfjs = await loadPdfJs();
+						const pdfjs = await loadPdfJs() as PdfJs;
 						const task = pdfjs.getDocument({
 							data: new Uint8Array(await readFile(path)),
 							isEvalSupported: false
@@ -2929,7 +2953,7 @@ exec "${nodePath}" "${scriptPath}" "$@"
 						try {
 							const page = await document.getPage(pageNumber),
 								viewport = page.getViewport({ scale: 2 });
-							const region = rect
+							const region: [number, number, number, number] = rect
 								? viewport.convertToViewportRectangle(rect)
 								: [0, 0, viewport.width, viewport.height];
 							const left = Math.min(region[0], region[2]),
@@ -2948,8 +2972,10 @@ exec "${nodePath}" "${scriptPath}" "$@"
 							const canvas = createEl("canvas");
 							canvas.width = width;
 							canvas.height = height;
+							const context = canvas.getContext("2d");
+							if (!context) throw new Error("无法创建 PDF 渲染画布");
 							await page.render({
-								canvasContext: canvas.getContext("2d"),
+								canvasContext: context,
 								viewport,
 								transform: [1, 0, 0, 1, -left, -top],
 								background: "rgb(255,255,255)"

@@ -38,7 +38,7 @@ export function scanPdfCropReferences(content: string): PdfCropReference[] {
 			const hash = raw.indexOf("#");
 			if (hash < 0 || !/\.pdf$/i.test(raw.slice(0, hash))) continue;
 			let backslashes = 0;
-			for (let n = match.index! - 1; n >= 0 && text[n] === "\\"; n--) backslashes++;
+			for (let n = match.index - 1; n >= 0 && text[n] === "\\"; n--) backslashes++;
 			if (backslashes % 2) continue;
 			const params = new URLSearchParams(raw.slice(hash + 1));
 			if (!params.has("rect") && !params.has("page")) continue;
@@ -62,8 +62,8 @@ export function scanPdfCropReferences(content: string): PdfCropReference[] {
 				target: raw.slice(0, hash),
 				page,
 				rect: coords as PdfCropReference["rect"],
-				start: offset + match.index!,
-				end: offset + match.index! + match[0].length,
+				start: offset + match.index,
+				end: offset + match.index + match[0].length,
 				displayWidth: width,
 				displayHeight: height,
 				alt: size ? undefined : match[2]

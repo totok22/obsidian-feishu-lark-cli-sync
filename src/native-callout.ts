@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
 import { createHash } from "crypto";
+import { getNativeText, NativeText } from "./native-text";
 
 const parser = new MarkdownIt({ html: true });
 const icons: Record<string, string> = {
@@ -32,10 +33,6 @@ export interface NativeBlock {
 export interface ConvertedBlocks {
 	first_level_block_ids: string[];
 	blocks: NativeBlock[];
-}
-interface NativeText {
-	elements: Array<Record<string, unknown>>;
-	style?: Record<string, unknown>;
 }
 
 /** Standalone boundary paragraphs survive native Markdown conversion. They are never published. */
@@ -116,19 +113,19 @@ export function prepareNativeCallouts(source: string): NativeCalloutDraft {
 }
 
 function textOf(block: NativeBlock): NativeText | undefined {
-	return (block.text || block.bullet || block.ordered) as NativeText | undefined;
+	return getNativeText(block.text || block.bullet || block.ordered);
 }
 function plainText(block: NativeBlock): string {
 	return (
 		textOf(block)
-			?.elements.map((element) => (element.text_run as { content?: string } | undefined)?.content || "")
+			?.elements.map((element) => element.text_run?.content || "")
 			.join("") || ""
 	);
 }
 
 /** Reparent already converted native blocks; do not flatten/rewrite code, formulas or tables. */
 export function assembleNativeCallouts(converted: ConvertedBlocks, specs: NativeCallout[]): ConvertedBlocks {
-	const blocks: NativeBlock[] = JSON.parse(JSON.stringify(converted.blocks));
+	const blocks = JSON.parse(JSON.stringify(converted.blocks)) as NativeBlock[];
 	const byId = new Map(blocks.map((block) => [block.block_id, block]));
 	if (byId.size !== blocks.length) throw new Error("Duplicate converted block IDs");
 	const opens = new Map(specs.map((spec) => [spec.open, spec]));
@@ -169,7 +166,7 @@ export function assembleNativeCallouts(converted: ConvertedBlocks, specs: Native
 				const richText = textOf(block)!;
 				let remaining = opening.open.length + (text[opening.open.length] === " " ? 1 : 0);
 				for (const element of richText.elements) {
-					const run = element.text_run as { content: string } | undefined;
+					const run = element.text_run;
 					if (!remaining || !run) continue;
 					const count = Math.min(remaining, run.content.length);
 					run.content = run.content.slice(count);
@@ -177,7 +174,7 @@ export function assembleNativeCallouts(converted: ConvertedBlocks, specs: Native
 				}
 				if (remaining) throw new Error("Callout marker spans unsupported inline elements");
 				richText.elements = richText.elements.filter(
-					(element) => !element.text_run || (element.text_run as { content: string }).content !== ""
+					(element) => !element.text_run || element.text_run.content !== ""
 				);
 				const palette: Record<string, string> = {
 					note: "Blue",

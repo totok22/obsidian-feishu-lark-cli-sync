@@ -1,7 +1,9 @@
+import { NativeTextElement } from "./native-text";
+
 /** Feishu's native bright yellow background (10) and red foreground (1). */
-export function colorBoldColonLabels(elements: Array<Record<string, any>>): Array<Record<string, any>> {
-	const result: Array<Record<string, any>> = [];
-	const eligible = (element: Record<string, any> | undefined) =>
+export function colorBoldColonLabels(elements: NativeTextElement[]): NativeTextElement[] {
+	const result: NativeTextElement[] = [];
+	const eligible = (element: NativeTextElement | undefined) =>
 		element?.text_run?.text_element_style?.bold === true && !element.text_run.text_element_style.inline_code;
 	for (let i = 0; i < elements.length; ) {
 		if (!eligible(elements[i])) {
@@ -13,7 +15,7 @@ export function colorBoldColonLabels(elements: Array<Record<string, any>>): Arra
 		while (end < elements.length && eligible(elements[end])) end++;
 		const combined = elements
 			.slice(i, end)
-			.map((e) => e.text_run.content)
+			.map((e) => e.text_run?.content || "")
 			.join("");
 		const colon = combined.search(/[:：]/);
 		const follows = /^\s*[:：]/.test(elements[end]?.text_run?.content || "");
@@ -24,8 +26,8 @@ export function colorBoldColonLabels(elements: Array<Record<string, any>>): Arra
 		let offset = 0;
 		for (; i < end; i++) {
 			const element = elements[i]!,
-				run = element.text_run,
-				content = run.content as string;
+				run = element.text_run!,
+				content = run.content;
 			const a = Math.max(0, Math.min(content.length, begin - offset));
 			const b = Math.max(0, Math.min(content.length, stop - offset));
 			if (b <= a) result.push(element);

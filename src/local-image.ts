@@ -419,6 +419,7 @@ async function readLocalVideo(
 	try {
 		// Hash large video files in chunks rather than loading the whole file into memory.
 		for await (const chunk of createReadStream(absolutePath)) {
+			if (!Buffer.isBuffer(chunk)) throw new Error("Unexpected non-buffer video chunk");
 			hash.update(chunk);
 			size += chunk.length;
 		}

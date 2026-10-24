@@ -4,13 +4,14 @@ import { readFile } from "fs/promises";
 import { createHash, randomUUID } from "crypto";
 import { assembleNativeCallouts, prepareNativeCallouts, ConvertedBlocks, NativeBlock } from "./native-callout";
 import { transformProse } from "./obsidian-export";
+import { getNativeText, isRecord, NativeTextElement } from "./native-text";
 
 export type NativeApi = (
 	method: string,
 	path: string,
 	body?: unknown,
 	params?: Record<string, unknown>
-) => Promise<Record<string, any>>;
+) => Promise<Record<string, unknown>>;
 export interface NativeUnit {
 	id: string;
 	hash: string;
@@ -46,6 +47,17 @@ export interface NativeSyncHost {
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const base = (doc: string) => `/open-apis/docx/v1/documents/${doc}`;
 
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item: unknown) => typeof item === "string");
+}
+
+function isNativeBlock(value: unknown): value is NativeBlock {
+	return (
+		isRecord(value) && typeof value.block_id === "string" && typeof value.block_type === "number" &&
+		(value.children === undefined || isStringArray(value.children))
+	);
+}
+
 export function nativeTreeHash(id: string, blocks: Map<string, NativeBlock>): string {
 	function visit(key: string, path = new Set<string>()): unknown {
 		if (path.has(key)) throw new Error("Cyclic native tree");
@@ -56,10 +68,11 @@ export function nativeTreeHash(id: string, blocks: Map<string, NativeBlock>): st
 		for (const name of Object.keys(block).sort()) {
 			if (["block_id", "parent_id", "children", "comment_ids"].includes(name)) continue;
 			// Fold/unfold is a reader interaction, never a content conflict.
-			clean[name] = JSON.parse(JSON.stringify(block[name]), (k, v) => (k === "folded" ? undefined : v));
+			clean[name] = JSON.parse(JSON.stringify(block[name]), (k: string, v: unknown) =>
+				k === "folded" ? undefined : v);
 		}
 		// Table cell IDs are structural references and vary on each conversion.
-		if (clean.table) delete (clean.table as Record<string, unknown>).cells;
+		if (isRecord(clean.table)) delete clean.table.cells;
 		return { ...clean, children: (block.children || []).map((child) => visit(child, next)) };
 	}
 	return hash(visit(id));
@@ -70,7 +83,7 @@ export async function readNativeSnapshot(
 	api: NativeApi
 ): Promise<{ roots: string[]; blocks: Map<string, NativeBlock>; revision: number }> {
 	const before = await api("GET", base(doc));
-	const revision = before.document?.revision_id;
+	const revision = isRecord(before.document) ? before.document.revision_id : undefined;
 	if (typeof revision !== "number") throw new Error("Document revision unavailable");
 	const blocks = new Map<string, NativeBlock>();
 	let page: string | undefined;
@@ -79,13 +92,15 @@ export async function readNativeSnapshot(
 			page_size: 500,
 			...(page ? { page_token: page } : {})
 		});
-		if (!Array.isArray(data.items)) throw new Error("Invalid native block response");
+		if (!Array.isArray(data.items) || !data.items.every(isNativeBlock))
+			throw new Error("Invalid native block response");
 		for (const block of data.items) blocks.set(block.block_id, block);
-		page = data.has_more ? data.page_token : undefined;
+		page = data.has_more && typeof data.page_token === "string" ? data.page_token : undefined;
 		if (data.has_more && !page) throw new Error("Missing native block page token");
 	} while (page);
 	const after = await api("GET", base(doc));
-	if (after.document?.revision_id !== revision) throw new Error("文档正在变化，请稍后重新同步。");
+	if (!isRecord(after.document) || after.document.revision_id !== revision)
+		throw new Error("文档正在变化，请稍后重新同步。");
 	const root = blocks.get(doc);
 	if (!root) throw new Error("Document root not found");
 	return { roots: root.children || [], blocks, revision };
@@ -125,10 +140,14 @@ export async function convertNativeDocument(
 		content_type: "markdown",
 		content: imageInput
 	});
-	if (!Array.isArray(data.blocks) || !Array.isArray(data.first_level_block_ids))
+	if (!Array.isArray(data.blocks) || !data.blocks.every(isNativeBlock) || !isStringArray(data.first_level_block_ids))
 		throw new Error("Native conversion response incomplete");
 	const imageBlocks = new Map<string, LocalImageResource>();
-	for (const entry of data.block_id_to_image_urls || []) {
+	const imageUrls: unknown = data.block_id_to_image_urls ?? [];
+	if (!Array.isArray(imageUrls)) throw new Error("Invalid native image mapping");
+	for (const entry of imageUrls as unknown[]) {
+		if (!isRecord(entry) || typeof entry.image_url !== "string" || typeof entry.block_id !== "string")
+			throw new Error("Invalid native image mapping");
 		const marker = /^https:\/\/fdp-image\.invalid\/(FEISHU_LARK_LOCAL_IMAGE_[a-f0-9]{64})$/.exec(
 			entry.image_url
 		)?.[1];
@@ -143,7 +162,9 @@ export async function convertNativeDocument(
 		)
 			throw new Error("转换器丢失图片位置，未写入文档。");
 	}
-	const tree = assembleNativeCallouts(data as ConvertedBlocks, draft.callouts);
+	const tree = assembleNativeCallouts(
+		{ blocks: data.blocks, first_level_block_ids: data.first_level_block_ids }, draft.callouts
+	);
 	const markerPattern = new RegExp(`${prefix}\\d+END`, "g");
 	const found = new Set<string>();
 	for (const block of tree.blocks) {
@@ -160,35 +181,27 @@ export async function convertNativeDocument(
 			};
 		}
 		for (const value of Object.values(block)) {
-			if (!value || typeof value !== "object" || !("elements" in value)) continue;
-			const text = value as { elements: Array<Record<string, any>> };
+			const text = getNativeText(value);
+			if (!text) continue;
 			text.elements = text.elements.flatMap((element) => {
 				const run = element.text_run;
 				if (!run) return [element];
-				const out: Array<Record<string, any>> = [];
+				const out: NativeTextElement[] = [];
 				let cursor = 0;
-				for (const match of (run.content as string).matchAll(markerPattern)) {
-					if (match.index! > cursor)
+				for (const match of run.content.matchAll(markerPattern)) {
+					if (match.index > cursor)
 						out.push({ text_run: { ...run, content: run.content.slice(cursor, match.index) } });
 					const mention = mentions.get(match[0]);
 					if (!mention) throw new Error("Unknown citation marker");
 					found.add(match[0]);
 					out.push({ mention_doc: { ...mention, text_element_style: run.text_element_style || {} } });
-					cursor = match.index! + match[0].length;
+					cursor = match.index + match[0].length;
 				}
 				if (!cursor) return [element];
 				if (cursor < run.content.length) out.push({ text_run: { ...run, content: run.content.slice(cursor) } });
 				return out;
 			});
-		}
-	}
-	for (const block of tree.blocks) {
-		if (block.block_type === 14) continue;
-		for (const value of Object.values(block)) {
-			if (value && typeof value === "object" && "elements" in value) {
-				const text = value as { elements: Array<Record<string, any>> };
-				if (labelColors) text.elements = colorBoldColonLabels(text.elements);
-			}
+			if (labelColors && block.block_type !== 14) text.elements = colorBoldColonLabels(text.elements);
 		}
 	}
 	if (found.size !== mentions.size) throw new Error("Native converter lost PDF citations; refusing publication");
@@ -215,9 +228,7 @@ export async function syncNativeDocument(
 	if (!/^[A-Za-z0-9_-]+$/.test(doc)) throw new Error("Native export requires a canonical document ID");
 	async function updateTitle(snapshot: { blocks: Map<string, NativeBlock> }): Promise<void> {
 		if (title === undefined) return;
-		const page = snapshot.blocks.get(doc)?.page as
-			| { elements?: Array<{ text_run?: { content: string } }> }
-			| undefined;
+		const page = getNativeText(snapshot.blocks.get(doc)?.page);
 		const current = page?.elements?.map((element) => element.text_run?.content || "").join("");
 		if (current !== title)
 			await host.api("PATCH", `${base(doc)}/blocks/${doc}`, {
@@ -226,7 +237,7 @@ export async function syncNativeDocument(
 	}
 	const labelStyleVersion = host.labelColors ? 1 : 0;
 	let state: NativeState = previous
-		? JSON.parse(JSON.stringify(previous))
+		? JSON.parse(JSON.stringify(previous)) as NativeState
 		: { version: 1, sourceHash: "", units: [] };
 	async function finishPending(): Promise<void> {
 		const pending = state.pending!;
@@ -234,9 +245,16 @@ export async function syncNativeDocument(
 			const response = await host.api("POST", `${base(doc)}/blocks/${doc}/descendant`, pending.request, {
 				client_token: pending.clientToken
 			});
-			const relations = new Map<string, string>(
-				(response.block_id_relations || []).map((r: any) => [r.temporary_block_id, r.block_id])
-			);
+			const relations = new Map<string, string>();
+			const mappings: unknown = response.block_id_relations ?? [];
+			if (!Array.isArray(mappings)) throw new Error("Invalid created block mapping");
+			for (const relation of mappings as unknown[]) {
+				if (
+					!isRecord(relation) || typeof relation.temporary_block_id !== "string" || typeof relation.block_id !== "string"
+				)
+					throw new Error("Invalid created block mapping");
+				relations.set(relation.temporary_block_id, relation.block_id);
+			}
 			for (const unit of pending.units) {
 				if (pending.request.children_id.includes(unit.id)) {
 					const remote = relations.get(unit.id);
@@ -272,7 +290,8 @@ export async function syncNativeDocument(
 				}
 			});
 			const remote = await host.api("GET", `${base(doc)}/blocks/${job.id}`);
-			if (remote.block?.image?.token !== job.token) throw new Error("原生图片 token 回读不一致");
+			if (!isRecord(remote.block) || !isRecord(remote.block.image) || remote.block.image.token !== job.token)
+				throw new Error("原生图片 token 回读不一致");
 			job.done = true;
 			await host.save(state);
 		}
@@ -281,7 +300,7 @@ export async function syncNativeDocument(
 			pending.imageRoots = beforeMedia.roots.flatMap((id, index) => {
 				if (!pending.units.some((unit) => unit.id === id)) return [];
 				const block = beforeMedia.blocks.get(id)!;
-				const text = block.text as { elements?: Array<{ text_run?: { content: string } }> } | undefined;
+				const text = getNativeText(block.text);
 				const value = text?.elements?.map((element) => element.text_run?.content || "").join("") || "";
 				return /^FEISHU_LARK_LOCAL_(?:IMAGE|VIDEO)_[a-f0-9]{64}$/.test(value.trim()) ? [{ id, index }] : [];
 			});
@@ -372,12 +391,12 @@ export async function syncNativeDocument(
 		: snapshot.roots;
 	// Preserve reader fold choices for matching parent titles when their body changes.
 	const folds = new Map<string, boolean[]>();
-	const titleOf = (block: NativeBlock) => {
-		const text = (block.text || block.bullet || block.ordered) as any;
-		return text?.elements?.map((element: any) => element.text_run?.content || "").join("");
+	const titleOf = (block: NativeBlock): string => {
+		const text = getNativeText(block.text || block.bullet || block.ordered);
+		return text?.elements.map((element) => element.text_run?.content || "").join("") || "";
 	};
 	for (const block of descendants(oldIds, snapshot.blocks)) {
-		const text = (block.text || block.bullet || block.ordered) as any;
+		const text = getNativeText(block.text || block.bullet || block.ordered);
 		if (block.children?.length && text?.style?.folded !== undefined) {
 			const key = titleOf(block);
 			const values = folds.get(key) || [];
@@ -390,21 +409,21 @@ export async function syncNativeDocument(
 		byId
 	);
 	for (const block of requestBlocks) {
-		const text = (block.text || block.bullet || block.ordered) as any;
+		const text = getNativeText(block.text || block.bullet || block.ordered);
 		const values = folds.get(titleOf(block));
 		if (block.children?.length && text?.style && values?.length) text.style.folded = values.shift();
 	}
 	if (requestBlocks.length > 1000) throw new Error("原生折叠单次变更超过 1000 块，未写入文档。");
 	const imageUploads = requestBlocks.flatMap((block) => {
-		const marker = (block.image as { token?: string })?.token;
-		return block.block_type === 27 && marker?.startsWith("FEISHU_LARK_LOCAL_IMAGE_")
+		const marker = isRecord(block.image) ? block.image.token : undefined;
+		return block.block_type === 27 && typeof marker === "string" && marker.startsWith("FEISHU_LARK_LOCAL_IMAGE_")
 			? [{ id: block.block_id, placeholder: marker }]
 			: [];
 	});
-	const wireBlocks: NativeBlock[] = JSON.parse(JSON.stringify(requestBlocks));
+	const wireBlocks = JSON.parse(JSON.stringify(requestBlocks)) as NativeBlock[];
 	for (const block of wireBlocks) {
-		if (imageUploads.some((image) => image.id === block.block_id))
-			delete (block.image as Record<string, unknown>).token;
+		if (imageUploads.some((image) => image.id === block.block_id) && isRecord(block.image))
+			delete block.image.token;
 	}
 	state.pending = {
 		sourceHash: hash(markdown),
