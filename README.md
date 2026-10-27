@@ -104,11 +104,14 @@ Local images and videos are uploaded with the note.
 ![[diagram.png|600]]
 ![[diagram.png|600x400]]
 ![Architecture](../assets/diagram.png)
+![Architecture|600](../assets/diagram.png)
+![Architecture|600x400](../assets/diagram.png)
 ![[clip.mp4]]
 ![Demo](../assets/clip.mp4)
 ```
 
 - Images: PNG, JPEG/JPG, GIF, WebP, and BMP. They must be inside the vault. HTTP(S) images go through the normal Markdown import.
+- For local images, `|600` sets a width of 600 pixels and preserves the aspect ratio; `|600x400` sets both dimensions. The `×` separator is also accepted. Size suffixes are removed from captions: `![Architecture|600](...)` has the caption “Architecture”.
 - Videos: MP4, M4V, MOV, and WebM, shown as inline file previews. Playback depends on the codec and the Feishu/Lark client; H.264/AAC MP4 and MOV have been tested. Remote video URLs and ordinary links are not uploaded. Unchanged videos are reused.
 - If only a referenced image or video changes, save-triggered sync and the `pre-push` hook still sync the bound note.
 
@@ -208,6 +211,8 @@ Auto sync covers Markdown notes and the images and videos they reference. PDFs n
 ### Published files
 
 Click the paper-plane icon in the left ribbon, or run `Published files` from the command palette. Each row shows the file name and local path. **Open in Feishu** opens the remote file. **More** offers copy link, open local file, sync, set link, and remove saved link (both the local and the remote file are kept).
+
+Removing a folder link also removes saved links for all its subfolders, notes, and PDFs, and clears the notes' incremental sync cache. Descendant records left behind by older folder removals are cleaned up when the plugin loads. Source frontmatter is kept, and its old links do not automatically restore bindings.
 
 Older versions did not record links when frontmatter was off. **Find existing links** matches note file names against the linked Feishu/Lark folders and never creates files. If several files match, set the link by hand.
 

@@ -19,7 +19,7 @@ export interface PublishedLinksHost {
 	getLanguage(): "zh-CN" | "en";
 	listEntries(): MaybePromise<PublishedLinkEntry[]>;
 	saveBindingUrl(entry: PublishedLinkEntry, url: string): MaybePromise<void>;
-	/** Remove only plugin settings binding metadata. Never edit notes or delete a remote document. */
+	/** Remove local binding metadata, including descendants for folders. Never edit notes or delete remote files. */
 	removeBinding(entry: PublishedLinkEntry): MaybePromise<void>;
 	openLocalFile?(entry: PublishedLinkEntry): MaybePromise<void>;
 	/** `report` receives short progress lines (for example the current step) while a long sync runs. */
@@ -36,6 +36,7 @@ const MESSAGES = {
 	en: {
 		title: "Published files",
 		localOnly: "Remove this saved link? Local files and Feishu files will be kept.",
+		folderLocalOnly: "Remove saved links for this folder and all its subfolders, notes, and PDFs? Local files and Feishu files will be kept.",
 		search: "Search", searchHint: "Search files or links", scope: "Folder",
 		all: "All folders", refresh: "Refresh", loading: "Loading…",
 		recover: "Find existing links", recovering: "Finding existing links…",
@@ -60,6 +61,7 @@ const MESSAGES = {
 	"zh-CN": {
 		title: "已发布文件",
 		localOnly: "移除此链接记录？本地文件和飞书文件都会保留。",
+		folderLocalOnly: "移除此目录及其全部子目录、笔记和 PDF 的链接记录？本地文件和飞书文件都会保留。",
 		search: "搜索", searchHint: "搜索文件或链接", scope: "文件夹",
 		all: "所有文件夹", refresh: "刷新", loading: "正在加载…",
 		recover: "查找已有链接", recovering: "正在查找已有链接…",
@@ -468,7 +470,7 @@ class DisconnectPublishedLinkModal extends PublishedLinkActionModal {
 		const t = messages(this.host);
 		this.titleEl.setText(t.disconnect);
 		this.contentEl.createEl("p", { text: this.entry.path || "/", cls: "feishu-lark-published-path" });
-		this.contentEl.createEl("p", { text: t.localOnly });
+		this.contentEl.createEl("p", { text: this.entry.kind === "folder" ? t.folderLocalOnly : t.localOnly });
 		this.addActions(t.disconnect, t.removing, () => this.host.removeBinding(this.entry), true);
 	}
 }

@@ -4,6 +4,13 @@
 
 本文件按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的结构维护，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 修复
+
+- 移除目录链接记录时，同时清理子目录、笔记、PDF、待确认创建记录和笔记增量同步缓存，阻止旧 frontmatter 恢复绑定。插件加载时清理旧版本移除目录后留下的子记录；确认框说明递归清理范围，本地和飞书文件均保留。
+- 解析本地 Markdown 图片说明末尾的尺寸，例如 `![image1|300](image.jpeg)` 和 `![架构图|600x400](diagram.png)`，同步时传递图片宽高并从图注中移除尺寸后缀。只指定宽度时按原图比例计算高度；Markdown 和 Wiki 图片均支持 `×` 分隔宽高。
+
 ## [0.4.2] - 2026-10-24
 
 ### 新增

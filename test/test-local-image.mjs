@@ -72,6 +72,45 @@ try {
 	assert.match(prepared.content, /- 结论\s+FEISHU_LARK_LOCAL_IMAGE_[a-f0-9]{64}/);
 	assert.match(prepared.content, /!\[remote\]\(https:\/\/example\.com\/remote\.png\)/);
 	assert.match(prepared.content, /```md\n!\[\[root\.png\]\]\n~~~\n!\[\[root\.png\]\]\n```/);
+	// Markdown alt suffixes use the same display sizes as wiki embeds, not literal captions.
+	for (const [syntax, alt, width, height] of [
+		["![image1|300](root.png)", "image1", 300, 150],
+		["![架构图|600x400](../assets/relative.png)", "架构图", 600, 400],
+		["![ 架构图 | 600 × 400 ](<../assets/relative.png> \"title\")", "架构图", 600, 400],
+		["![|300](root.png)", undefined, 300, 150],
+		["![管道|说明|300](root.png)", "管道|说明", 300, 150],
+		["![[root.png|600 × 400]]", undefined, 600, 400],
+		["![架构图|原尺寸](root.png)", "架构图|原尺寸", undefined, undefined],
+		["![架构图|0](root.png)", "架构图|0", undefined, undefined],
+		["![架构图|300x0](root.png)", "架构图|300x0", undefined, undefined],
+		["![架构图|9007199254740992](root.png)", "架构图|9007199254740992", undefined, undefined]
+	]) {
+		const sized = await prepareLocalImages({
+			vaultRoot: workspace, markdownPath: "notes/note.md", content: syntax
+		});
+		const image = sized.images[0];
+		assert.equal(image.alt, alt, syntax);
+		assert.equal(image.displayWidth, width, syntax);
+		assert.equal(image.displayHeight, height, syntax);
+		const args = buildMediaInsertArgs("doc-token", image);
+		assert.equal(args.includes("--width"), width !== undefined, syntax);
+		assert.equal(args.includes("--height"), height !== undefined, syntax);
+		if (width !== undefined) assert.equal(args[args.indexOf("--width") + 1], String(width), syntax);
+		if (height !== undefined) assert.equal(args[args.indexOf("--height") + 1], String(height), syntax);
+		assert.equal(args.includes("--caption"), alt !== undefined, syntax);
+		if (alt !== undefined) assert.equal(args[args.indexOf("--caption") + 1], alt, syntax);
+	}
+	const sizedIdentity = async (content) => (await prepareLocalImages({
+		vaultRoot: workspace, markdownPath: "notes/note.md", content
+	})).images[0].placeholder;
+	assert.notEqual(await sizedIdentity("![image1|300](root.png)"), await sizedIdentity("![image1|450](root.png)"),
+		"changing only the Markdown size must invalidate the sync cache");
+	assert.equal(await sizedIdentity("![|300](root.png)"), await sizedIdentity("![[root.png|300]]"),
+		"equivalent Markdown and wiki sizes have the same resource identity");
+	assert.deepEqual(scanLocalImageReferences("`![example|300](missing.png)`\n\n<!-- ![example|300](missing.png) -->\n\n```md\n![example|300](missing.png)\n```"), []);
+	assert.deepEqual(scanLocalImageReferences("![remote|300](https://example.com/image.png)"), []);
+	assert.equal(scanLocalImageReferences("![video|300](clip.mp4)")[0].alt, "video|300",
+		"image size syntax does not change video captions");
 	const listAdjacentImage = await prepareLocalImages({
 		vaultRoot: workspace,
 		markdownPath: "notes/note.md",

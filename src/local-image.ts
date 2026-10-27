@@ -281,10 +281,15 @@ function scanLineImageReferences(
 			continue;
 		}
 		const sourceSyntax = markdownMatch[0] || "";
+		const dimensions = video
+			? { alt: markdownMatch[1] || undefined }
+			: parseMarkdownImageAlt(markdownMatch[1] || "");
 		references.push({
 			sourceSyntax,
 			target: rawTarget,
-			alt: markdownMatch[1] || undefined,
+			alt: dimensions.alt,
+			displayWidth: dimensions.width,
+			displayHeight: dimensions.height,
 			start,
 			end: start + sourceSyntax.length
 		});
@@ -307,14 +312,28 @@ function isEscaped(line: string, index: number): boolean {
 
 function parseWikiImageAlias(alias: string): { width?: number; height?: number; alt?: string } {
 	const normalizedAlias = alias.trim();
-	const dimensions = normalizedAlias.match(/^(\d+)(?:x(\d+))?$/i);
-	if (!dimensions?.[1]) {
+	const dimensions = normalizedAlias.match(/^(\d+)(?:\s*[x×]\s*(\d+))?$/i);
+	const width = Number(dimensions?.[1]);
+	const height = dimensions?.[2] ? Number(dimensions[2]) : undefined;
+	if (!Number.isSafeInteger(width) || width <= 0
+		|| (height !== undefined && (!Number.isSafeInteger(height) || height <= 0))) {
 		return normalizedAlias ? { alt: normalizedAlias } : {};
 	}
 	return {
-		width: Number(dimensions[1]),
-		height: dimensions[2] ? Number(dimensions[2]) : undefined
+		width,
+		height
 	};
+}
+
+function parseMarkdownImageAlt(alt: string): { width?: number; height?: number; alt?: string } {
+	const separator = alt.lastIndexOf("|");
+	if (separator >= 0) {
+		const dimensions = parseWikiImageAlias(alt.slice(separator + 1));
+		if (dimensions.width !== undefined) {
+			return { ...dimensions, alt: alt.slice(0, separator).trim() || undefined };
+		}
+	}
+	return { alt: alt || undefined };
 }
 
 export function resolveLocalImageVaultPath(

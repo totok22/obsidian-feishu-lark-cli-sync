@@ -822,6 +822,86 @@ assert.equal(folderRegistryPlugin.settings.folderBindings["my_library|my_library
 assert.equal(folderRegistryPlugin.settings.folderBindings["my_library|my_library||docs-other"].token, "other-node");
 assert.equal(folderRegistryPlugin.settings.documentBindings["notes/docs/Note.md"].token, "remote-doc");
 
+// Removing a published folder forgets every descendant record, while changing its URL above preserves note links.
+function createUnlinkTreePlugin() {
+	const plugin = createPublishingPlugin();
+	const files = ["Root/Sub/Legacy.md", "Root/Sub/Saved.md", "Root/Sibling.md", "Root/Sub-other/Keep.md"]
+		.map((path) => Object.assign(new TestFile(), { path, extension: "md" }));
+	plugin.app.vault.getMarkdownFiles = () => files;
+	plugin.app.metadataCache.getFileCache = (file) => file.path.endsWith("Legacy.md")
+		? { frontmatter: { lark_doc_url: "https://example.feishu.cn/docx/legacy-doc" } } : null;
+	plugin.app.vault.read = plugin.app.vault.modify = () => assert.fail("Unlink must not read or edit note content");
+	plugin.runLarkCli = () => assert.fail("Unlink must not touch remote files");
+	plugin.settings.publishedFolders = {
+		Root: { rootParent: { kind: "drive", token: "parent" }, remoteRoot: "Remote" },
+		"Root/Sub/Separate": { rootParent: { kind: "wiki", token: "other-parent" }, remoteRoot: "Separate" }
+	};
+	plugin.settings.folderBindings = {
+		"target|drive|parent|Remote": { token: "root", url: "" },
+		"target|drive|parent|Remote/Sub": { token: "sub", url: "" },
+		"target|drive|parent|Remote/Sub/Deep": { token: "deep", url: "" },
+		"target|drive|parent|Remote/Sub-other": { token: "keep-folder", url: "" },
+		"target|wiki|other-parent|Separate": { token: "separate", url: "" },
+		"target|wiki|unrelated|Remote/Sub": { token: "unrelated-folder", url: "" }
+	};
+	plugin.settings.pendingFolderCreates = {
+		"target|drive|parent|Remote/Sub/Pending": "Pending",
+		"target|drive|parent|Remote/Sub-other/Pending": "Keep"
+	};
+	plugin.settings.documentBindings = {
+		"Root/Sub/Saved.md": { token: "saved-doc", nodeToken: "saved-node", url: "https://example.feishu.cn/wiki/saved-node" },
+		"Root/Sub/Missing.md": { token: "missing-doc", url: "" },
+		"Root/Sibling.md": { token: "sibling-doc", url: "" },
+		"Root/Sub-other/Keep.md": { token: "keep-doc", url: "" }
+	};
+	plugin.settings.pendingDocumentCreates = {
+		"Root/Sub/Pending.md": { title: "Pending", startedAt: "now" },
+		"Root/Sub-other/Pending.md": { title: "Keep", startedAt: "now" }
+	};
+	plugin.settings.pdfBindings = {
+		"Root/Sub/Manual.pdf": { fileToken: "pdf" },
+		"Root/Sub/Separate/Pending.pdf": { status: "pending" },
+		"Root/Sub-other/Keep.pdf": { fileToken: "keep-pdf" }
+	};
+	for (const key of ["saved-doc", "saved-node", "https://example.feishu.cn/wiki/saved-node", "missing-doc", "legacy-doc", "keep-doc"]) {
+		plugin.syncState.documents[key] = { doc: key, units: [] };
+	}
+	return plugin;
+}
+const cascadePlugin = createUnlinkTreePlugin();
+await cascadePlugin.disconnectPublishedBinding({ path: "Root/Sub", kind: "folder" });
+assert.deepEqual(Object.keys(cascadePlugin.settings.documentBindings).sort(), ["Root/Sibling.md", "Root/Sub-other/Keep.md"]);
+assert.deepEqual(Object.keys(cascadePlugin.settings.pdfBindings), ["Root/Sub-other/Keep.pdf"]);
+assert.deepEqual(Object.keys(cascadePlugin.settings.pendingDocumentCreates), ["Root/Sub-other/Pending.md"]);
+assert.deepEqual(Object.keys(cascadePlugin.settings.pendingFolderCreates), ["target|drive|parent|Remote/Sub-other/Pending"]);
+assert.deepEqual(Object.keys(cascadePlugin.settings.publishedFolders), ["Root"]);
+assert.deepEqual(Object.keys(cascadePlugin.settings.folderBindings).sort(),
+	["target|drive|parent|Remote", "target|drive|parent|Remote/Sub-other", "target|wiki|unrelated|Remote/Sub"].sort());
+assert.deepEqual(Object.keys(cascadePlugin.syncState.documents), ["keep-doc"]);
+assert.equal(cascadePlugin.settings.disconnectedFolders["Root/Sub"], true);
+assert.equal(cascadePlugin.getBinding({ path: "Root/Sub/Legacy.md" }), null, "frontmatter cannot resurrect a removed child link");
+assert.ok(!cascadePlugin.listPublishedEntries().some((entry) => entry.path.startsWith("Root/Sub/")));
+assert.ok(cascadePlugin.listPublishedEntries().some((entry) => entry.path === "Root/Sub-other/Keep.md"));
+await cascadePlugin.disconnectPublishedBinding({ path: "Root", kind: "folder" });
+assert.deepEqual(cascadePlugin.settings.documentBindings, {});
+assert.deepEqual(cascadePlugin.settings.pdfBindings, {});
+assert.deepEqual(cascadePlugin.settings.pendingDocumentCreates, {});
+assert.deepEqual(cascadePlugin.settings.pendingFolderCreates, {});
+assert.deepEqual(cascadePlugin.settings.publishedFolders, {});
+assert.deepEqual(cascadePlugin.listPublishedEntries(), []);
+
+const legacyUnlinkPlugin = createUnlinkTreePlugin();
+await legacyUnlinkPlugin.disconnectFolderBinding("Root/Sub");
+legacyUnlinkPlugin.settings.disconnectedFolders["Root/Sub"] = true;
+assert.ok(legacyUnlinkPlugin.listPublishedEntries().some((entry) => entry.path === "Root/Sub/Saved.md"));
+await legacyUnlinkPlugin.cleanupDisconnectedFolderBindings();
+assert.ok(!legacyUnlinkPlugin.listPublishedEntries().some((entry) => entry.path.startsWith("Root/Sub/")));
+assert.equal(legacyUnlinkPlugin.settings.recursiveFolderUnlinkMigrated, true);
+await legacyUnlinkPlugin.rememberDocumentBinding({ path: "Root/Sub/Saved.md" }, { token: "new-doc", url: "" });
+await legacyUnlinkPlugin.cleanupDisconnectedFolderBindings();
+assert.equal(legacyUnlinkPlugin.settings.documentBindings["Root/Sub/Saved.md"].token, "new-doc",
+	"one-time migration must preserve links deliberately added after cleanup");
+
 const localUnbindPlugin = createPublishingPlugin();
 localUnbindPlugin.settings.documentBindings[fakeNote.path] = canonicalBinding;
 await localUnbindPlugin.unbindDeletedRemoteDocument(fakeNote, canonicalBinding);

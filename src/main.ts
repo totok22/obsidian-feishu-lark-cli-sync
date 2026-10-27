@@ -252,6 +252,7 @@ interface LarkCliSyncSettings {
 	pendingFolderCreates: Record<string, string>;
 	disconnectedBindings: Record<string, boolean>;
 	disconnectedFolders: Record<string, boolean>;
+	recursiveFolderUnlinkMigrated?: boolean;
 	pdfBindings: Record<string, PdfBinding>;
 	folderBindings: Record<string, BoundLarkDocument>;
 	publishedFolders: Record<string, PublishedFolderBinding>;
@@ -925,6 +926,7 @@ export default class LarkCliSyncPlugin extends Plugin {
 		await this.migrateLegacyPluginData();
 		await this.loadSettings();
 		this.syncState = await this.loadLarkSyncState();
+		await this.cleanupDisconnectedFolderBindings();
 		await this.tryEnsureLarkSyncStateFile();
 		await this.tryRefreshInstalledPrePushHook();
 		this.registerSaveAutoSync();
@@ -5847,19 +5849,16 @@ exec "${nodePath}" "${scriptPath}" "$@"
 
 	private async disconnectFolderBinding(path: string): Promise<void> {
 		// Drop only associations for this local subtree; individual documents keep their bindings.
-		const folderEntries = this.listPublishedEntries().filter((entry) => entry.kind === "folder" && this.isPathWithin(entry.path, path));
-		for (const entry of folderEntries) {
-			for (const [key, binding] of Object.entries(this.settings.folderBindings)) {
-				if (binding.token === entry.token) delete this.settings.folderBindings[key];
-			}
-		}
 		for (const [folder, published] of Object.entries(this.settings.publishedFolders)) {
 			if (!this.isPathWithin(path, folder) && !this.isPathWithin(folder, path)) continue;
 			const prefix = this.isPathWithin(folder, path) ? published.remoteRoot
 				: getSelectedRemoteParentPath(folder, `${path}/__file.md`, published.remoteRoot);
-			for (const key of Object.keys(this.settings.pendingFolderCreates || {})) {
+			for (const key of new Set([
+				...Object.keys(this.settings.folderBindings), ...Object.keys(this.settings.pendingFolderCreates || {})
+			])) {
 				const root = this.getFolderBindingRootParent(key);
 				if (root.kind === published.rootParent.kind && root.token === published.rootParent.token && this.isPathWithin(this.getFolderBindingPath(key), prefix)) {
+					delete this.settings.folderBindings[key];
 					delete this.settings.pendingFolderCreates[key];
 				}
 			}
@@ -5871,8 +5870,27 @@ exec "${nodePath}" "${scriptPath}" "$@"
 
 	private async disconnectPublishedBinding(entry: PublishedLinkEntry): Promise<void> {
 		if (entry.kind === "folder") {
+			const notes = new Map(this.app.vault.getMarkdownFiles().map((file) => [file.path, file]));
+			const paths = new Set([
+				...Object.keys(this.settings.documentBindings),
+				...Object.keys(this.settings.pendingDocumentCreates || {}),
+				...notes.keys()
+			]);
+			for (const path of paths) {
+				if (!this.isPathWithin(path, entry.path)) continue;
+				const file = notes.get(path);
+				const binding = this.settings.documentBindings[path] || (file ? this.getBinding(file) : null);
+				(this.settings.disconnectedBindings ??= {})[path] = true;
+				delete this.settings.documentBindings[path];
+				delete this.settings.pendingDocumentCreates?.[path];
+				if (binding) this.removeSyncStateForBinding(binding);
+			}
+			for (const path of Object.keys(this.settings.pdfBindings)) {
+				if (this.isPathWithin(path, entry.path)) delete this.settings.pdfBindings[path];
+			}
 			await this.disconnectFolderBinding(entry.path);
 			(this.settings.disconnectedFolders ??= {})[entry.path] = true;
+			await this.saveLarkSyncState();
 		}
 		else if (entry.kind === "pdf") delete this.settings.pdfBindings[entry.path];
 		else {
@@ -5883,6 +5901,17 @@ exec "${nodePath}" "${scriptPath}" "$@"
 			delete this.settings.pendingDocumentCreates?.[entry.path];
 			if (binding) { this.removeSyncStateForBinding(binding); await this.saveLarkSyncState(); }
 		}
+		await this.saveSettingsWithoutClearingCommandCache();
+	}
+
+	/** Finish local-only removals made by versions that left descendant links behind. */
+	private async cleanupDisconnectedFolderBindings(): Promise<void> {
+		if (this.settings.recursiveFolderUnlinkMigrated) return;
+		for (const path of Object.keys(this.settings.disconnectedFolders || {})) {
+			if (!this.settings.disconnectedFolders[path]) continue;
+			await this.disconnectPublishedBinding({ id: `folder:${path}`, path, kind: "folder", url: "" });
+		}
+		this.settings.recursiveFolderUnlinkMigrated = true;
 		await this.saveSettingsWithoutClearingCommandCache();
 	}
 

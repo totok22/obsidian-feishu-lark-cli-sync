@@ -191,6 +191,16 @@ disconnect.activate();
 await flush();
 assert.equal(removed, 1, "Duplicate activation cannot submit twice");
 
+search.type("");
+action(rows(modal)[0], "Remove saved link").activate();
+await flush();
+confirmation = globalThis.__ui.modals.at(-1);
+assert.match(confirmation.contentEl.children[1].textContent, /folder and all its subfolders, notes, and PDFs/);
+assert.match(confirmation.contentEl.children[1].textContent, /Local files and Feishu files will be kept/);
+footer = globalThis.__ui.settings.findLast((setting) => confirmation.contentEl.children.includes(setting.settingEl));
+action(footer, "Cancel").activate();
+assert.equal(removed, 1, "canceling a recursive removal preserves every record");
+
 // A refresh during sync must not leave newly rendered controls disabled.
 let syncCount = 0;
 let opened;
