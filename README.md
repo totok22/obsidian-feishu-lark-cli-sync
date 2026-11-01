@@ -103,6 +103,7 @@ Local images and videos are uploaded with the note.
 ![[diagram.png]]
 ![[diagram.png|600]]
 ![[diagram.png|600x400]]
+![[diagram.svg|600]]
 ![Architecture](../assets/diagram.png)
 ![Architecture|600](../assets/diagram.png)
 ![Architecture|600x400](../assets/diagram.png)
@@ -110,7 +111,8 @@ Local images and videos are uploaded with the note.
 ![Demo](../assets/clip.mp4)
 ```
 
-- Images: PNG, JPEG/JPG, GIF, WebP, and BMP. They must be inside the vault. HTTP(S) images go through the normal Markdown import.
+- Images: PNG, JPEG/JPG, GIF, WebP, BMP, and SVG. They must be inside the vault. HTTP(S) images go through the normal Markdown import.
+- SVGs are converted to PNG during sync, keeping source files and note references unchanged. Rendering defaults to 2× resolution with size limits for large images. Results are cached and regenerated when the source changes. Obsidian uses its built-in browser; Git hooks require `resvg` on `PATH` (`brew install resvg` on macOS). External images must be embedded in the SVG. Export SVGs containing scripts or HTML as plain SVG or PNG first.
 - For local images, `|600` sets a width of 600 pixels and preserves the aspect ratio; `|600x400` sets both dimensions. The `×` separator is also accepted. Size suffixes are removed from captions: `![Architecture|600](...)` has the caption “Architecture”.
 - Videos: MP4, M4V, MOV, and WebM, shown as inline file previews. Playback depends on the codec and the Feishu/Lark client; H.264/AAC MP4 and MOV have been tested. Remote video URLs and ordinary links are not uploaded. Unchanged videos are reused.
 - If only a referenced image or video changes, save-triggered sync and the `pre-push` hook still sync the bound note.

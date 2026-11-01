@@ -3,10 +3,11 @@ import { createHash } from "crypto";
 import { createReadStream } from "fs";
 import { readdir, readFile, realpath } from "fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "path";
+import { prepareSvgImage, SvgRenderer } from "./svg-image";
 
 const LOCAL_IMAGE_PLACEHOLDER_PREFIX = "FEISHU_LARK_LOCAL_IMAGE_";
 const LOCAL_VIDEO_PLACEHOLDER_PREFIX = "FEISHU_LARK_LOCAL_VIDEO_";
-const SUPPORTED_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
+const SUPPORTED_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"]);
 const SUPPORTED_VIDEO_EXTENSIONS = new Set([".mp4", ".m4v", ".mov", ".webm"]);
 
 export interface LocalImageReference {
@@ -50,6 +51,7 @@ export interface PrepareLocalImagesInput {
 	markdownPath: string;
 	content: string;
 	imageIndex?: LocalImageFileIndex;
+	renderSvg?: SvgRenderer;
 }
 
 export interface FindReferencingMarkdownInput {
@@ -143,7 +145,8 @@ export async function prepareLocalImages(input: PrepareLocalImagesInput): Promis
 			input.markdownPath,
 			reference,
 			vaultPath,
-			occurrenceIndex
+			occurrenceIndex,
+			input.renderSvg
 		);
 		images.push(image);
 	}
@@ -376,10 +379,11 @@ async function readLocalImage(
 	markdownPath: string,
 	reference: LocalImageReference,
 	vaultPath: string,
-	occurrenceIndex: number
+	occurrenceIndex: number,
+	renderSvg?: SvgRenderer
 ): Promise<LocalImageResource> {
 	const absoluteRoot = await realpath(vaultRoot);
-	const absolutePath = await realpath(resolve(absoluteRoot, vaultPath));
+	let absolutePath = await realpath(resolve(absoluteRoot, vaultPath));
 	if (!isPathInsideRoot(absoluteRoot, absolutePath)) {
 		throw new LocalImageError("image-outside-vault", markdownPath, reference.sourceSyntax,
 			"媒体解析结果位于 Obsidian vault 外");
@@ -394,17 +398,35 @@ async function readLocalImage(
 		throw new LocalImageError("image-read-failed", markdownPath, reference.sourceSyntax,
 			error instanceof Error ? error.message : String(error));
 	}
-	const dimensions = readImageDimensions(buffer, extname(vaultPath).toLowerCase());
+	const svg = extname(vaultPath).toLowerCase() === ".svg";
+	// Renderer PNG encodings can differ between Obsidian and the Git hook. Keep the
+	// sync identity tied to SVG bytes while retaining the PNG hash for upload validation.
+	const sourceHash = svg ? createHash("sha256").update(buffer).digest("hex") : undefined;
+	let defaultDisplay: { displayWidth: number; displayHeight: number } | undefined;
+	if (svg) {
+		try {
+			const rendered = await prepareSvgImage(buffer, renderSvg);
+			absolutePath = rendered.absolutePath;
+			buffer = rendered.png;
+			defaultDisplay = { displayWidth: rendered.displayWidth, displayHeight: rendered.displayHeight };
+		} catch (error) {
+			throw new LocalImageError("svg-render-failed", markdownPath, reference.sourceSyntax,
+				error instanceof Error ? error.message : String(error));
+		}
+	}
+	const dimensions = readImageDimensions(buffer, svg ? ".png" : extname(vaultPath).toLowerCase());
 	if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) {
 		throw new LocalImageError("image-format-unsupported", markdownPath, reference.sourceSyntax,
 			"无法读取图片尺寸或图片格式不受支持");
 	}
 	const contentHash = createHash("sha256").update(buffer).digest("hex");
-	const displayDimensions = calculateDisplayDimensions(reference, dimensions);
+	const displayDimensions = calculateDisplayDimensions(
+		reference.displayWidth ? reference : { ...reference, ...defaultDisplay }, dimensions
+	);
 	const identity = JSON.stringify({
 		markdownPath: normalizeVaultPath(markdownPath),
 		vaultPath,
-		contentHash,
+		contentHash: sourceHash || contentHash,
 		displayWidth: displayDimensions.width,
 		displayHeight: displayDimensions.height,
 		alt: reference.alt,
@@ -417,7 +439,7 @@ async function readLocalImage(
 		vaultPath,
 		absolutePath,
 		contentHash,
-		mimeType: mimeTypeForExtension(extname(vaultPath).toLowerCase()),
+		mimeType: svg ? "image/png" : mimeTypeForExtension(extname(vaultPath).toLowerCase()),
 		sourceWidth: dimensions.width,
 		sourceHeight: dimensions.height,
 		displayWidth: displayDimensions.width,

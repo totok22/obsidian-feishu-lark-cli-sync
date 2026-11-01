@@ -24,6 +24,12 @@ const { buildLocalImageFileIndex, buildLocalImageFileIndexFromPaths, collectRefe
 const noteName = (folderName) => `${folderName} images`;
 const plan = (input) => planImageGalleries({ referencedImagePaths: new Set(), noteName, ...input });
 
+const svgIndex = buildLocalImageFileIndexFromPaths(["assets/used.svg", "assets/spare.svg"]);
+const svgReferences = collectReferencedLocalImagePaths([{ path: "Note.md", content: "![[used.svg]]" }], svgIndex);
+assert.deepEqual([...svgReferences], ["assets/used.svg"]);
+assert.deepEqual(plan({ imagePaths: [...svgIndex.paths], notes: [], referencedImagePaths: svgReferences }),
+	[{ notePath: "assets/assets images.md", exists: false, imagePaths: ["assets/spare.svg"] }]);
+
 // A folder that only holds images gets a note named after the folder.
 assert.deepEqual(plan({
 	imagePaths: ["Shots/10.png", "Shots/2.png", "Shots/1.png"],

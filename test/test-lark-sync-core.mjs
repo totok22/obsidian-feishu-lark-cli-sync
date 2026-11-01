@@ -1120,6 +1120,20 @@ assert.notEqual(exportedMarkdownState.contentHash, await createContentHash("# No
 assert.equal(await isRemoteXmlContentEquivalent(remoteXml, "# Note\n\nBody\n\n## Next"), true);
 assert.equal(await isRemoteXmlContentEquivalent(remoteXml, "# Note\n\nBody"), false);
 
+const duplicateLeadingTitleXml = '<title id="doc-token">Note</title><h1 id="body-title">Note</h1>'
+	+ '<h1 id="source-title">Source title</h1><p id="body">Body</p><img id="image"/>';
+const duplicateLeadingTitleMarkdown = '# Note\n\n# Source title\n\nBody\n\n'
+	+ 'FEISHU_LARK_LOCAL_IMAGE_' + 'a'.repeat(64);
+assert.equal(await isRemoteXmlContentEquivalent(duplicateLeadingTitleXml, duplicateLeadingTitleMarkdown), true);
+assert.equal(await isRemoteXmlContentEquivalent(duplicateLeadingTitleXml.replace('>Note</h1>', '>Different</h1>'), duplicateLeadingTitleMarkdown), false);
+assert.equal(await isRemoteXmlContentEquivalent(duplicateLeadingTitleXml.replace('>Body</p>', '>Edited</p>'), duplicateLeadingTitleMarkdown), false);
+assert.equal(await isRemoteXmlContentEquivalent(duplicateLeadingTitleXml + '<p id="extra">Added</p>', duplicateLeadingTitleMarkdown), false);
+const duplicateLeadingTitleMapped = await createDocumentSyncStateFromRemote('doc-token', duplicateLeadingTitleMarkdown, duplicateLeadingTitleXml, 9);
+assert.deepEqual(duplicateLeadingTitleMapped.units.map(unit => unit.blockId), ['source-title', 'body', 'image']);
+assert.equal(isDocumentStateBlockMappingAcceptable(duplicateLeadingTitleMapped), true);
+assert.equal(await isRemoteXmlContentEquivalent('<title id="doc-token">Note</title><h2 id="section">Note</h2>', '# Note\n\n## Note'), true);
+assert.equal(await isRemoteXmlContentEquivalent(duplicateLeadingTitleXml.replace('<h1 id="body-title">Note</h1>', '<h2 id="body-title">Note</h2>'), duplicateLeadingTitleMarkdown), false);
+
 const partialRemoteXml = "<title id=\"doc-token\">Note</title><p id=\"blk-1\">Body</p><p id=\"blk-2\">Merged<br/>Second</p>";
 const partialState = await createDocumentSyncStateFromRemote("doc-token", "# Note\n\nBody\n\n1. Second", partialRemoteXml, 8);
 assert.equal(partialState.revisionId, 8);

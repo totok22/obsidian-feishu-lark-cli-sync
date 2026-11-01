@@ -2894,7 +2894,16 @@ function readRemoteTopLevelUnits(xml: string): RemoteSyncUnit[] {
 			fingerprint: unit.fingerprint
 		};
 	});
-	return removeDuplicatedHeadingTextUnits(units);
+	const normalizedUnits = removeDuplicatedHeadingTextUnits(units);
+	const title = xml.match(/<title\b[^>]*>[\s\S]*?<\/title>/i);
+	const firstBlockStart = collectedUnits[0]?.startIndex;
+	const hasLeadingH1 = firstBlockStart !== undefined && /^<h1\b/i.test(xml.slice(firstBlockStart, firstBlockStart + 4));
+	// Markdown comparison already removes a repeated document title from the body.
+	// Some CLI imports retain that leading heading in XML, including image exports.
+	return title && hasLeadingH1 && normalizedUnits[0]?.kind === "heading"
+		&& normalizedUnits[0].fingerprint === createXmlFingerprint("heading", title[0])
+		? normalizedUnits.slice(1)
+		: normalizedUnits;
 }
 
 function shouldTreatRemoteListItemAsSyncUnit(

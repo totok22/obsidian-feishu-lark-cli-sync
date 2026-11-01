@@ -1,7 +1,7 @@
 {
 	"id": "feishu-docs-publisher",
 	"name": "Feishu Docs Publisher",
-	"version": "0.4.2",
+	"version": "0.4.3",
 	"minAppVersion": "1.13.0",
 	"description": "Publish Markdown notes, folders, and PDFs to Feishu/Lark Docs and keep them in sync through the local lark-cli.",
 	"author": "totok22",

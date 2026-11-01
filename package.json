@@ -1,6 +1,6 @@
 {
 	"name": "feishu-docs-publisher",
-	"version": "0.4.2",
+	"version": "0.4.3",
 	"description": "Publish and sync Markdown notes, folders, and PDFs to Feishu/Lark Docs through the local lark-cli.",
 	"main": "main.js",
 	"type": "module",
@@ -9,7 +9,7 @@
 		"dev": "node scripts/generate-embedded-helpers.mjs && node esbuild.config.mjs",
 		"check": "npm test && npm run build",
 		"release:check": "node scripts/check-release-notes.mjs",
-		"test": "node scripts/generate-embedded-helpers.mjs && tsc --noEmit && node test/test-link-rewrite.mjs && node test/test-pdf-links.mjs && node test/test-obsidian-export.mjs && node test/test-native-callout.mjs && node test/test-native-sync.mjs && node test/test-native-pre-push.mjs && node test/test-label-colors.mjs && node test/test-pdf-crops.mjs && node test/test-folder-path.mjs && node test/test-note-content.mjs && node test/test-lark-cli-command.mjs && node test/test-lark-cli-management.mjs && node test/test-lark-sync-core.mjs && node test/test-local-image.mjs && node test/test-image-gallery.mjs && node test/test-remote-cleanup.mjs && node test/test-ignore-rules.mjs && node test/test-sync-ignore.mjs && node test/test-main.mjs && node test/test-published-links.mjs && node test/test-pdf-publish.mjs && node test/test-pre-push.mjs",
+		"test": "node scripts/generate-embedded-helpers.mjs && tsc --noEmit && node test/test-link-rewrite.mjs && node test/test-pdf-links.mjs && node test/test-obsidian-export.mjs && node test/test-native-callout.mjs && node test/test-native-sync.mjs && node test/test-native-pre-push.mjs && node test/test-label-colors.mjs && node test/test-pdf-crops.mjs && node test/test-folder-path.mjs && node test/test-note-content.mjs && node test/test-lark-cli-command.mjs && node test/test-lark-cli-management.mjs && node test/test-lark-sync-core.mjs && node test/test-local-image.mjs && node test/test-svg-image.mjs && node test/test-image-gallery.mjs && node test/test-remote-cleanup.mjs && node test/test-ignore-rules.mjs && node test/test-sync-ignore.mjs && node test/test-main.mjs && node test/test-published-links.mjs && node test/test-pdf-publish.mjs && node test/test-pre-push.mjs",
 		"version": "node scripts/version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [
@@ -29,6 +29,7 @@
 		"typescript": "^5.8.3"
 	},
 	"dependencies": {
+		"@xmldom/xmldom": "^0.9.12",
 		"markdown-it": "^15.0.3"
 	}
 }

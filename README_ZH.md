@@ -103,6 +103,7 @@ lark_doc_url: "https://example.feishu.cn/docx/xxxx"
 ![[diagram.png]]
 ![[diagram.png|600]]
 ![[diagram.png|600x400]]
+![[diagram.svg|600]]
 ![架构图](../assets/diagram.png)
 ![架构图|600](../assets/diagram.png)
 ![架构图|600x400](../assets/diagram.png)
@@ -110,7 +111,8 @@ lark_doc_url: "https://example.feishu.cn/docx/xxxx"
 ![演示](../assets/clip.mp4)
 ```
 
-- 图片：支持 PNG、JPEG/JPG、GIF、WebP 和 BMP，必须在当前库内。HTTP(S) 图片走普通的 Markdown 导入。
+- 图片：支持 PNG、JPEG/JPG、GIF、WebP、BMP 和 SVG，必须在当前库内。HTTP(S) 图片走普通的 Markdown 导入。
+- SVG 同步时自动转为 PNG，原文件和笔记引用保持原样。默认按两倍分辨率渲染，超大图片会限制尺寸；转换结果会缓存，源图变化后自动重新生成。Obsidian 使用内置浏览器转换，Git hook 需要 `resvg` 在 `PATH` 中（macOS 可运行 `brew install resvg`）。SVG 中的外部图片需先嵌入文件；含脚本或 HTML 内容的 SVG 请先导出为纯 SVG 或 PNG。
 - 本地图片的 `|600` 表示宽度为 600 像素，高度按原图比例计算；`|600x400` 指定宽高，也支持 `×` 分隔。尺寸后缀不会作为图注，`![架构图|600](...)` 的图注为“架构图”。
 - 视频：支持 MP4、M4V、MOV 和 WebM，显示为文件预览块。能否播放取决于编码和客户端，已实测 H.264/AAC 的 MP4 和 MOV。远程视频地址和普通链接不会上传。没变化的视频会复用。
 - 只有被引用的图片或视频变化时，保存后同步和 `pre-push` 仍会同步引用它的已绑定笔记。

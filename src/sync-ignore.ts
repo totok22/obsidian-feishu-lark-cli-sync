@@ -20,7 +20,7 @@ export type IgnoreState = "ignored" | "partial" | "included";
 
 export const IGNORE_FILE_HEADER = "# Feishu Docs Publisher: files and folders listed here are not synced. Same syntax as .gitignore.";
 
-const SYNCED_EXTENSIONS = new Set(["md", "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp"]);
+const SYNCED_EXTENSIONS = new Set(["md", "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
 
 /** Only notes, PDFs, and images reach Feishu, so only they (and folders holding them) are worth listing. */
 export function buildIgnoreTree(root: VaultNodeLike): IgnoreTreeNode {

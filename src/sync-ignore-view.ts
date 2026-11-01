@@ -70,7 +70,7 @@ const MESSAGES = {
 	}
 };
 
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
 
 /** A workspace tab for one sync folder: its notes, PDFs, and subfolders are checked to sync or unchecked to ignore. */
 export class SyncIgnoreView extends ItemView {

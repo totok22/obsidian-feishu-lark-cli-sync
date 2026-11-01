@@ -42,6 +42,7 @@ try {
 	assert.ok(!index.has("Proj/Empty"), "folders holding no syncable files are hidden");
 	assert.ok(!index.has("Proj/data.csv"));
 	assert.deepEqual(buildIgnoreTree(file("a.csv", "csv")).children, []);
+	assert.ok(indexIgnoreTree(buildIgnoreTree(folder("/", [file("diagram.SVG", "SVG")]))).has("diagram.SVG"));
 
 	// States come from the rules that apply to each vault path, wherever they were written.
 	const rules = new IgnoreRules();

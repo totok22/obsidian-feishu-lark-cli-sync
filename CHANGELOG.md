@@ -6,10 +6,19 @@
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-01
+
+### 新增
+
+- 本地 SVG 图片同步时自动转为 PNG，保留原文件、引用、图注和显示尺寸。图片索引、目录汇总、忽略页面和图片变更检测均支持 SVG。
+- SVG 转换结果按内容缓存，失败时报告源笔记和引用。桌面端使用内置浏览器，Git hook 使用 `resvg`。
+
 ### 修复
 
+- 远端 XML 正文开头重复文档标题时，按 Markdown 的相同规则比较正文和映射块 ID，避免图片已上传却误报“远端更新尚未可见”。其他正文差异仍会阻止校验通过。
 - 移除目录链接记录时，同时清理子目录、笔记、PDF、待确认创建记录和笔记增量同步缓存，阻止旧 frontmatter 恢复绑定。插件加载时清理旧版本移除目录后留下的子记录；确认框说明递归清理范围，本地和飞书文件均保留。
 - 解析本地 Markdown 图片说明末尾的尺寸，例如 `![image1|300](image.jpeg)` 和 `![架构图|600x400](diagram.png)`，同步时传递图片宽高并从图注中移除尺寸后缀。只指定宽度时按原图比例计算高度；Markdown 和 Wiki 图片均支持 `×` 分隔宽高。
+- 原生导出补充远端块、图片映射和文本结构校验，遇到无效响应时中止同步。
 
 ## [0.4.2] - 2026-10-24
 
@@ -114,6 +123,8 @@
 - 处理旧版 Wiki 文档的 owner 解析、标题附近的导入图片、飞书引用块和 URL 往返格式。
 - 完善目录发布、PDF 引用和 pre-push 同步中的去重与绑定恢复。
 
+[Unreleased]: https://github.com/totok22/feishu-docs-publisher/compare/0.4.3...HEAD
+[0.4.3]: https://github.com/totok22/feishu-docs-publisher/compare/0.4.2...0.4.3
 [0.4.2]: https://github.com/totok22/feishu-docs-publisher/compare/0.4.1...0.4.2
 [0.4.1]: https://github.com/totok22/feishu-docs-publisher/compare/0.4.0...0.4.1
 [0.4.0]: https://github.com/totok22/feishu-docs-publisher/compare/0.3.1...0.4.0
